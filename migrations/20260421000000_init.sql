@@ -1,0 +1,17 @@
+CREATE TABLE IF NOT EXISTS scans (
+    id UUID PRIMARY KEY,
+    target VARCHAR(255) NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS findings (
+    id UUID PRIMARY KEY,
+    scan_id UUID NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+    plugin_name VARCHAR(100) NOT NULL,
+    finding_type VARCHAR(100) NOT NULL,
+    data JSONB NOT NULL,
+    severity VARCHAR(50) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autonomous Bug Bounty Recon Agent</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Autorecon Agent 🤖</h1>
+            <p>Passive Reconnaissance System</p>
+        </header>
+
+        <section class="scan-form">
+            <input type="text" id="target" placeholder="Enter target (e.g., example.com)" autocomplete="off">
+            <button id="scan-btn">Start Scan</button>
+        </section>
+
+        <section id="status-container" class="hidden">
+            <h2>Status: <span id="scan-status">Starting...</span></h2>
+            <div class="loader" id="loader"></div>
+        </section>
+
+        <section id="results-container" class="hidden">
+            <h2>Findings</h2>
+            <div class="table-wrapper">
+                <table id="results-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Plugin</th>
+                            <th>Type</th>
+                            <th>Data</th>
+                        </tr>
+                    </thead>
+                    <tbody id="results-body">
+                        <!-- Findings will be injected here -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+    <script src="/app.js"></script>
+</body>
+</html>

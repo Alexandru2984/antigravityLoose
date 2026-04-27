@@ -6,53 +6,94 @@ A modular, extensible, and passive reconnaissance system built in **Rust**. It a
 - **Concurrent Engine:** Built on Tokio to run multiple reconnaissance plugins simultaneously.
 - **PostgreSQL Storage:** Reliable data persistence with SQLx.
 - **REST API:** Axum-powered endpoints to start scans and view results.
-- **Dashboard:** Clean, vanilla JavaScript dark-mode frontend.
-- **Passive Recon:** Safely gathers information (DNS, Subdomains via crt.sh, HTTP headers) without intrusive scanning.
+- **Dashboard:** Clean, vanilla JavaScript dark-mode frontend with API key authentication.
+- **Passive Recon:** Safely gathers information (DNS, Subdomains, HTTP headers, Security Headers, Robots.txt, Tech Stack, Port Scanning, Email Breach, Username Footprinting) without intrusive scanning.
+- **Hardened Security:** SSRF protection with post-DNS IP validation, API key auth, input validation, body size limits, scan timeouts, error sanitization, and graceful shutdown.
 
 ## Architecture
-- `src/core/` - The async scheduler and worker engine.
-- `src/plugins/` - Independent reconnaissance modules.
-- `src/api/` - HTTP router and handlers.
+- `src/core/` - The async scheduler, worker engine, SSRF validation, and input sanitization.
+- `src/plugins/` - Independent reconnaissance modules (11 plugins).
+- `src/api/` - HTTP router, auth middleware, and handlers.
 
-## Getting Started
+## Quick Start
 
-### Prerequisites
+The fastest way to run everything:
+```bash
+./run.sh
+```
+
+This script will:
+1. Check that `docker` and `cargo` are installed
+2. Create `.env` from `.env.example` if missing
+3. Start PostgreSQL via Docker Compose (with readiness check)
+4. Build and run the Rust application
+
+### Manual Setup
+
+#### Prerequisites
 - Rust (Cargo)
 - Docker & Docker Compose (for PostgreSQL)
 
-### 1. Setup the Database
-Spin up the PostgreSQL database using Docker Compose:
+#### 1. Setup the Database
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-### 2. Configure Environment
-Copy the example environment file:
+#### 2. Configure Environment
 ```bash
 cp .env.example .env
 ```
-Ensure `DATABASE_URL` matches your local setup.
+Edit `.env` to set your `DATABASE_URL` and generate a strong `API_KEY`:
+```bash
+openssl rand -hex 32
+```
 
-### 3. Run the Agent
-The application will automatically run database migrations on startup.
+#### 3. Run the Agent
 ```bash
 cargo run
 ```
 
-### 4. Access the Dashboard
+#### 4. Access the Dashboard
 Open your browser and navigate to:
 ```
 http://localhost:8080
 ```
-Enter a target (e.g., `example.com`) and watch the recon process!
+Enter your API key, then input a target (e.g., `example.com`) and start scanning!
+
+## Plugins (11)
+
+| Plugin | Target Type | Description |
+|---|---|---|
+| `subdomain_crtsh` | Domain | Subdomain enumeration via Certificate Transparency |
+| `dns_info` | Domain/Email | DNS records (A, AAAA, MX, TXT) |
+| `http_probe` | Domain | HTTP/HTTPS probing, WAF detection, title extraction |
+| `tech_stack_detector` | Domain | Technology stack detection (CMS, frameworks, servers) |
+| `sensitive_files_fuzzer` | Domain | Fuzzing for exposed sensitive files |
+| `port_scanner` | Domain | Common port scanning (13 ports) |
+| `ip_info` | Domain | IP geolocation and intelligence |
+| `security_headers` | Domain | Security headers audit (HSTS, CSP, X-Frame-Options, etc.) |
+| `robots_txt` | Domain | Robots.txt analysis for hidden paths |
+| `email_breach_xon` | Email | Email breach checking via XposedOrNot |
+| `username_footprint` | Username/Email | Username footprinting across 1000+ platforms (Sherlock) |
 
 ## Adding New Plugins
-To add a new plugin:
 1. Create a new file in `src/plugins/`.
-2. Implement the `async_trait` `Plugin`.
+2. Implement the `async_trait` `Plugin` trait (include `resolved_ip` parameter).
 3. Register the plugin in `src/plugins/mod.rs` inside `get_all_plugins()`.
 
 ## Security
-- Validates targets safely.
-- No intrusive actions.
-- Ignores SSL errors intentionally for recon purposes but uses secure defaults for internal operations.
+- **SSRF Protection:** Post-DNS-resolution IP validation, cloud metadata blocking, DNS rebinding prevention.
+- **Authentication:** API key via `X-API-Key` header on all protected endpoints.
+- **Input Validation:** Regex allowlists per target type, schema/path traversal blocking.
+- **DoS Prevention:** Concurrency limits, body size limits, scan timeouts (5 min).
+- **Error Sanitization:** Generic messages to clients, detailed errors only in server logs.
+- **Graceful Shutdown:** Handles SIGINT/SIGTERM for clean resource cleanup.
+
+## API Endpoints
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/health` | No | Health check |
+| `POST` | `/api/scan` | Yes | Start a new scan |
+| `GET` | `/api/scans/{id}` | Yes | Get scan status |
+| `GET` | `/api/scans/{id}/results` | Yes | Get scan findings |

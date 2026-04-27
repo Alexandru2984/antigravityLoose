@@ -1,63 +1,69 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const apiKeyInput = document.getElementById('api-key-input');
-    const authBtn = document.getElementById('auth-btn');
-    const authError = document.getElementById('auth-error');
-    const authSection = document.getElementById('auth-section');
-    const scanSection = document.getElementById('scan-section');
-    const logoutBtn = document.getElementById('logout-btn');
-    const targetInput = document.getElementById('target');
-    const scanBtn = document.getElementById('scan-btn');
-    const statusContainer = document.getElementById('status-container');
-    const statusText = document.getElementById('scan-status');
-    const loader = document.getElementById('loader');
-    const resultsContainer = document.getElementById('results-container');
-    const resultsBody = document.getElementById('results-body');
+    // ─── DOM Elements ───
+    const $ = id => document.getElementById(id);
+    const apiKeyInput   = $('api-key-input');
+    const authBtn       = $('auth-btn');
+    const authError     = $('auth-error');
+    const authSection   = $('auth-section');
+    const scanSection   = $('scan-section');
+    const logoutBtn     = $('logout-btn');
+    const targetInput   = $('target');
+    const targetIcon    = $('target-icon');
+    const scanBtn       = $('scan-btn');
+    const statusContainer = $('status-container');
+    const statusText    = $('scan-status');
+    const statusBadge   = $('status-badge');
+    const scanTargetDisplay = $('scan-target-display');
+    const progressFill  = $('progress-fill');
+    const resultsContainer = $('results-container');
+    const resultsGrid   = $('results-grid');
+    const filterSeverity = $('filter-severity');
+    const filterPlugin  = $('filter-plugin');
+    const statTotal     = $('stat-total');
+    const statHigh      = $('stat-high');
+    const statMedium    = $('stat-medium');
+    const statInfo      = $('stat-info');
 
     let currentScanId = null;
     let pollInterval = null;
+    let allFindings = [];
 
-    // Check for existing session
-    const storedKey = sessionStorage.getItem('api_key');
-    if (storedKey) {
-        showScanUI();
-    }
+    // ─── Check existing session ───
+    if (sessionStorage.getItem('api_key')) showScanUI();
 
-    // --- Authentication ---
+    // ─── Target type icon detection ───
+    targetInput.addEventListener('input', () => {
+        const val = targetInput.value.trim();
+        if (val.includes('@')) targetIcon.textContent = '📧';
+        else if (/^\d+\.\d+\.\d+\.\d+$/.test(val)) targetIcon.textContent = '🔗';
+        else if (val.includes('.')) targetIcon.textContent = '🌐';
+        else targetIcon.textContent = '👤';
+    });
+
+    // ─── Auth ───
     authBtn.addEventListener('click', async () => {
         const key = apiKeyInput.value.trim();
-        if (!key) {
-            showAuthError('Please enter an API key.');
-            return;
-        }
+        if (!key) return showAuthError('Please enter an API key.');
 
         authBtn.disabled = true;
-        authBtn.textContent = 'Verifying...';
+        authBtn.querySelector('span').textContent = 'Verifying...';
 
         try {
-            // Verify the key by hitting the health endpoint with auth
             const res = await fetch('/api/scans/00000000-0000-0000-0000-000000000000', {
                 headers: { 'X-API-Key': key }
             });
-
-            if (res.status === 401) {
-                showAuthError('Invalid API key.');
-                return;
-            }
-
-            // Key is valid (404 for scan not found means auth passed)
+            if (res.status === 401) return showAuthError('Invalid API key.');
             sessionStorage.setItem('api_key', key);
             showScanUI();
-        } catch (err) {
-            showAuthError('Connection failed. Please try again.');
+        } catch {
+            showAuthError('Connection failed.');
         } finally {
             authBtn.disabled = false;
-            authBtn.textContent = 'Authenticate';
+            authBtn.querySelector('span').textContent = 'Authenticate';
         }
     });
 
-    apiKeyInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') authBtn.click();
-    });
+    apiKeyInput.addEventListener('keydown', e => { if (e.key === 'Enter') authBtn.click(); });
 
     logoutBtn.addEventListener('click', () => {
         sessionStorage.removeItem('api_key');
@@ -78,157 +84,280 @@ document.addEventListener('DOMContentLoaded', () => {
         scanSection.classList.remove('hidden');
     }
 
-    function getApiKey() {
-        return sessionStorage.getItem('api_key') || '';
+    function headers() {
+        return { 'X-API-Key': sessionStorage.getItem('api_key') || '', 'Content-Type': 'application/json' };
     }
 
-    function authHeaders() {
-        return {
-            'X-API-Key': getApiKey(),
-            'Content-Type': 'application/json',
-        };
-    }
-
-    // --- Scan ---
+    // ─── Scan ───
     scanBtn.addEventListener('click', async () => {
         const target = targetInput.value.trim();
         if (!target) return;
 
         scanBtn.disabled = true;
-        resultsBody.innerHTML = '';
+        scanBtn.querySelector('.btn-text').textContent = 'Scanning...';
+        scanBtn.querySelector('.btn-loader').classList.remove('hidden');
+        allFindings = [];
+        resultsGrid.innerHTML = '';
         resultsContainer.classList.add('hidden');
         statusContainer.classList.remove('hidden');
-        statusText.innerText = 'Initializing...';
-        statusText.style.color = 'var(--accent-color)';
-        loader.style.display = 'block';
+        statusText.textContent = 'Initializing...';
+        statusBadge.querySelector('.pulse-dot').className = 'pulse-dot';
+        scanTargetDisplay.textContent = target;
+        progressFill.className = 'progress-fill active';
+        statTotal.textContent = statHigh.textContent = statMedium.textContent = statInfo.textContent = '0';
 
         try {
-            const res = await fetch('/api/scan', {
-                method: 'POST',
-                headers: authHeaders(),
-                body: JSON.stringify({ target })
-            });
-
-            if (res.status === 401) {
-                sessionStorage.removeItem('api_key');
-                location.reload();
-                return;
-            }
-
+            const res = await fetch('/api/scan', { method: 'POST', headers: headers(), body: JSON.stringify({ target }) });
+            if (res.status === 401) return location.reload();
             if (!res.ok) {
-                const errData = await res.json().catch(() => ({ error: 'Failed to start scan' }));
-                throw new Error(errData.error || 'Failed to start scan');
+                const err = await res.json().catch(() => ({ error: 'Scan failed' }));
+                throw new Error(err.error);
             }
-
             const data = await res.json();
             currentScanId = data.scan_id;
             pollInterval = setInterval(pollStatus, 2000);
-            
         } catch (error) {
-            statusText.innerText = error.message || 'Error starting scan';
-            statusText.style.color = '#f85149';
-            loader.style.display = 'none';
-            scanBtn.disabled = false;
+            statusText.textContent = error.message;
+            statusBadge.querySelector('.pulse-dot').className = 'pulse-dot failed';
+            progressFill.className = 'progress-fill';
+            resetScanBtn();
         }
     });
 
-    targetInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') scanBtn.click();
-    });
+    targetInput.addEventListener('keydown', e => { if (e.key === 'Enter') scanBtn.click(); });
+
+    function resetScanBtn() {
+        scanBtn.disabled = false;
+        scanBtn.querySelector('.btn-text').textContent = 'Start Scan';
+        scanBtn.querySelector('.btn-loader').classList.add('hidden');
+    }
 
     async function pollStatus() {
         if (!currentScanId) return;
-
         try {
-            const statusRes = await fetch(`/api/scans/${currentScanId}`, {
-                headers: { 'X-API-Key': getApiKey() }
-            });
-
-            if (statusRes.status === 401) {
-                sessionStorage.removeItem('api_key');
-                location.reload();
-                return;
-            }
-
-            if (!statusRes.ok) throw new Error('Failed to fetch status');
-            const statusData = await statusRes.json();
-
-            const status = statusData.status.toLowerCase();
-            statusText.innerText = status;
+            const sRes = await fetch(`/api/scans/${currentScanId}`, { headers: { 'X-API-Key': sessionStorage.getItem('api_key') } });
+            if (sRes.status === 401) return location.reload();
+            if (!sRes.ok) return;
+            const sData = await sRes.json();
+            const status = (sData.status || '').toLowerCase();
+            statusText.textContent = status;
 
             if (status === 'completed' || status === 'failed') {
                 clearInterval(pollInterval);
-                loader.style.display = 'none';
-                scanBtn.disabled = false;
-                statusText.style.color = status === 'completed' ? '#3fb950' : '#f85149';
+                progressFill.className = 'progress-fill done';
+                statusBadge.querySelector('.pulse-dot').className = `pulse-dot ${status}`;
+                resetScanBtn();
             }
 
-            const resultsRes = await fetch(`/api/scans/${currentScanId}/results`, {
-                headers: { 'X-API-Key': getApiKey() }
-            });
-            if (resultsRes.ok) {
-                const findings = await resultsRes.json();
-                renderFindings(findings);
+            const rRes = await fetch(`/api/scans/${currentScanId}/results`, { headers: { 'X-API-Key': sessionStorage.getItem('api_key') } });
+            if (rRes.ok) {
+                allFindings = await rRes.json();
+                updateStats();
+                updatePluginFilter();
+                renderFindings();
             }
-
-        } catch (error) {
-            console.error(error);
-        }
+        } catch (e) { console.error(e); }
     }
 
-    const severityColors = {
-        info: '#8b949e',
-        low: '#58a6ff',
-        medium: '#d29922',
-        high: '#f85149',
-        critical: '#ff3333',
+    // ─── Stats ───
+    function updateStats() {
+        statTotal.textContent = allFindings.length;
+        statHigh.textContent = allFindings.filter(f => sev(f) === 'high').length;
+        statMedium.textContent = allFindings.filter(f => sev(f) === 'medium').length;
+        statInfo.textContent = allFindings.filter(f => sev(f) === 'info' || sev(f) === 'low').length;
+    }
+
+    function sev(f) {
+        return (typeof f.severity === 'string' ? f.severity : 'info').toLowerCase();
+    }
+
+    // ─── Filters ───
+    function updatePluginFilter() {
+        const plugins = [...new Set(allFindings.map(f => f.plugin_name))].sort();
+        const current = filterPlugin.value;
+        filterPlugin.innerHTML = '<option value="all">All Plugins</option>';
+        plugins.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p;
+            opt.textContent = p;
+            filterPlugin.appendChild(opt);
+        });
+        filterPlugin.value = current;
+    }
+
+    filterSeverity.addEventListener('change', renderFindings);
+    filterPlugin.addEventListener('change', renderFindings);
+
+    // ─── Render Findings ───
+    function renderFindings() {
+        if (allFindings.length === 0) return;
+        resultsContainer.classList.remove('hidden');
+        resultsGrid.innerHTML = '';
+
+        const sevFilter = filterSeverity.value;
+        const plugFilter = filterPlugin.value;
+
+        const filtered = allFindings.filter(f => {
+            if (sevFilter !== 'all' && sev(f) !== sevFilter) return false;
+            if (plugFilter !== 'all' && f.plugin_name !== plugFilter) return false;
+            return true;
+        });
+
+        filtered.forEach(f => resultsGrid.appendChild(createFindingCard(f)));
+    }
+
+    // ─── Plugin Icons ───
+    const pluginIcons = {
+        dns_info: '🔍', subdomain_crtsh: '🌐', http_probe: '📡', email_breach_xon: '💀',
+        username_footprint: '👤', port_scanner: '🔌', ip_info: '📍', tech_stack_detector: '⚙️',
+        sensitive_files_fuzzer: '📂', security_headers: '🛡️', robots_txt: '🤖',
     };
 
-    function renderFindings(findings) {
-        if (findings.length === 0) return;
-        
-        resultsContainer.classList.remove('hidden');
-        resultsBody.innerHTML = '';
+    function createFindingCard(f) {
+        const card = document.createElement('div');
+        card.className = 'finding-card';
+        const severity = sev(f);
+        const icon = pluginIcons[f.plugin_name] || '📋';
+        const time = new Date(f.created_at).toLocaleTimeString();
 
-        findings.forEach(f => {
-            const tr = document.createElement('tr');
-            
-            const date = new Date(f.created_at).toLocaleTimeString();
-            const dataStr = JSON.stringify(f.data, null, 2);
-            const severity = (typeof f.severity === 'string' ? f.severity : 'info').toLowerCase();
+        card.innerHTML = `
+            <div class="finding-top">
+                <div class="finding-plugin">${icon} ${f.plugin_name}</div>
+                <div class="finding-meta">
+                    <span class="finding-time">${time}</span>
+                    <span class="severity-badge severity-${severity}">${severity}</span>
+                </div>
+            </div>
+            <div class="finding-type">${formatType(f.finding_type)}</div>
+            <div class="finding-body">${renderData(f)}</div>
+        `;
+        return card;
+    }
 
-            const tdDate = document.createElement('td');
-            tdDate.textContent = date;
+    function formatType(t) {
+        return t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
 
-            const tdPlugin = document.createElement('td');
-            const spanPlugin = document.createElement('span');
-            spanPlugin.style.color = 'var(--accent-color)';
-            spanPlugin.textContent = f.plugin_name;
-            tdPlugin.appendChild(spanPlugin);
+    // ─── Smart Data Rendering ───
+    function renderData(f) {
+        const d = f.data;
+        if (!d || typeof d !== 'object') return `<pre>${JSON.stringify(d, null, 2)}</pre>`;
 
-            const tdType = document.createElement('td');
-            tdType.textContent = f.finding_type;
+        // Social profiles — clickable links
+        if (f.finding_type === 'social_profile') {
+            const url = d.profile_url || '';
+            return `
+                <div class="finding-row"><span class="finding-key">Platform</span><span class="finding-value">${esc(d.platform || '')}</span></div>
+                <div class="finding-row"><span class="finding-key">Username</span><span class="finding-value">${esc(d.username || '')}</span></div>
+                <div class="finding-row"><span class="finding-key">Profile</span><span class="finding-value"><a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></span></div>
+            `;
+        }
 
-            const tdSeverity = document.createElement('td');
-            const severityBadge = document.createElement('span');
-            severityBadge.className = 'severity-badge';
-            severityBadge.textContent = severity;
-            severityBadge.style.color = severityColors[severity] || '#8b949e';
-            severityBadge.style.borderColor = severityColors[severity] || '#8b949e';
-            tdSeverity.appendChild(severityBadge);
+        // HTTP response
+        if (f.finding_type === 'http_response') {
+            return `
+                <div class="finding-row"><span class="finding-key">URL</span><span class="finding-value"><a href="${esc(d.url || '')}" target="_blank" rel="noopener">${esc(d.url || '')}</a></span></div>
+                <div class="finding-row"><span class="finding-key">Status</span><span class="finding-value">${d.status || ''}</span></div>
+                <div class="finding-row"><span class="finding-key">Server</span><span class="finding-value">${esc(d.server || '')}</span></div>
+                <div class="finding-row"><span class="finding-key">WAF</span><span class="finding-value">${esc(d.waf || 'none')}</span></div>
+                ${d.title ? `<div class="finding-row"><span class="finding-key">Title</span><span class="finding-value">${esc(d.title)}</span></div>` : ''}
+            `;
+        }
 
-            const tdData = document.createElement('td');
-            const preData = document.createElement('pre');
-            preData.textContent = dataStr;
-            tdData.appendChild(preData);
+        // Open ports
+        if (f.finding_type === 'open_ports') {
+            const ports = (d.open_ports || []).join(', ');
+            return `
+                <div class="finding-row"><span class="finding-key">Target</span><span class="finding-value">${esc(d.target || '')}</span></div>
+                <div class="finding-row"><span class="finding-key">IP</span><span class="finding-value">${esc(d.ip || '')}</span></div>
+                <div class="finding-row"><span class="finding-key">Open Ports</span><span class="finding-value">${esc(ports)}</span></div>
+            `;
+        }
 
-            tr.appendChild(tdDate);
-            tr.appendChild(tdPlugin);
-            tr.appendChild(tdType);
-            tr.appendChild(tdSeverity);
-            tr.appendChild(tdData);
-            
-            resultsBody.appendChild(tr);
-        });
+        // Subdomains
+        if (f.finding_type === 'subdomain') {
+            const sub = d.subdomain || '';
+            return `<div class="finding-row"><span class="finding-key">Subdomain</span><span class="finding-value"><a href="https://${esc(sub)}" target="_blank" rel="noopener">${esc(sub)}</a></span></div>`;
+        }
+
+        // Data breach
+        if (f.finding_type === 'data_breach') {
+            const breaches = (d.breaches || []).slice(0, 20);
+            return `
+                <div class="finding-row"><span class="finding-key">Email</span><span class="finding-value">${esc(d.email || '')}</span></div>
+                <div class="finding-row"><span class="finding-key">Breaches</span><span class="finding-value">${breaches.length} found</span></div>
+                <ul class="finding-list">${breaches.map(b => `<li>💀 ${esc(b)}</li>`).join('')}</ul>
+                ${d.breaches && d.breaches.length > 20 ? `<div style="color:var(--text-muted);font-size:0.75rem;margin-top:0.3rem">...and ${d.breaches.length - 20} more</div>` : ''}
+            `;
+        }
+
+        // Security headers
+        if (f.finding_type === 'security_headers_audit') {
+            let html = `<div class="finding-row"><span class="finding-key">Score</span><span class="finding-value">${esc(d.score || '')}</span></div>`;
+            if (d.missing_headers && d.missing_headers.length > 0) {
+                html += `<ul class="finding-list">${d.missing_headers.map(h => `<li>❌ ${esc(h.header)} — ${esc(h.description)}</li>`).join('')}</ul>`;
+            }
+            if (d.present_headers && d.present_headers.length > 0) {
+                html += `<ul class="finding-list">${d.present_headers.map(h => `<li>✅ ${esc(h.header)}</li>`).join('')}</ul>`;
+            }
+            return html;
+        }
+
+        // Robots.txt
+        if (f.finding_type === 'robots_txt_analysis') {
+            let html = `<div class="finding-row"><span class="finding-key">Rules</span><span class="finding-value">${d.total_rules || 0}</span></div>`;
+            if (d.interesting_paths && d.interesting_paths.length > 0) {
+                html += `<ul class="finding-list">${d.interesting_paths.map(p => `<li>⚠️ ${esc(p)}</li>`).join('')}</ul>`;
+            }
+            if (d.sitemaps && d.sitemaps.length > 0) {
+                html += `<ul class="finding-list">${d.sitemaps.map(s => `<li>🗺️ <a href="${esc(s)}" target="_blank" rel="noopener">${esc(s)}</a></li>`).join('')}</ul>`;
+            }
+            return html;
+        }
+
+        // Tech stack
+        if (f.finding_type === 'tech_stack') {
+            return `
+                <div class="finding-row"><span class="finding-key">URL</span><span class="finding-value"><a href="${esc(d.url || '')}" target="_blank" rel="noopener">${esc(d.url || '')}</a></span></div>
+                <ul class="finding-list">${(d.technologies || []).map(t => `<li>⚙️ ${esc(t)}</li>`).join('')}</ul>
+            `;
+        }
+
+        // Exposed files
+        if (f.finding_type === 'exposed_files') {
+            return `<ul class="finding-list">${(d.exposed_paths || []).map(p => `<li>📂 <a href="http://${esc(d.target || '')}${esc(p)}" target="_blank" rel="noopener">${esc(p)}</a></li>`).join('')}</ul>`;
+        }
+
+        // DNS records
+        if (f.finding_type && f.finding_type.endsWith('_record')) {
+            const values = d.ips || d.exchanges || d.texts || [];
+            return `<ul class="finding-list">${values.map(v => `<li>${esc(v)}</li>`).join('')}</ul>`;
+        }
+
+        // IP intelligence
+        if (f.finding_type === 'ip_intelligence') {
+            return ['country', 'regionName', 'city', 'isp', 'org', 'as', 'query']
+                .filter(k => d[k])
+                .map(k => `<div class="finding-row"><span class="finding-key">${formatType(k)}</span><span class="finding-value">${esc(String(d[k]))}</span></div>`)
+                .join('');
+        }
+
+        // Fallback: render all key-value pairs
+        return Object.entries(d)
+            .map(([k, v]) => {
+                const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
+                const isUrl = typeof v === 'string' && (v.startsWith('http://') || v.startsWith('https://'));
+                const display = isUrl
+                    ? `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>`
+                    : esc(val);
+                return `<div class="finding-row"><span class="finding-key">${esc(k)}</span><span class="finding-value">${display}</span></div>`;
+            }).join('');
+    }
+
+    // ─── XSS-safe escape ───
+    function esc(s) {
+        const el = document.createElement('span');
+        el.textContent = s;
+        return el.innerHTML;
     }
 });

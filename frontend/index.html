@@ -3,59 +3,144 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Autonomous Bug Bounty Recon Agent</title>
+    <meta name="description" content="Autonomous Bug Bounty Recon Agent — Passive reconnaissance dashboard for domains, emails, IPs and usernames.">
+    <title>Autorecon Agent — Recon Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+    <!-- Animated background -->
+    <div class="bg-grid"></div>
+
     <div class="container">
-        <header>
-            <h1>Autorecon Agent 🤖</h1>
-            <p>Passive Reconnaissance System</p>
+        <!-- Header -->
+        <header id="main-header">
+            <div class="logo">
+                <div class="logo-icon">⚡</div>
+                <div>
+                    <h1>Autorecon Agent</h1>
+                    <p class="subtitle">Autonomous Passive Reconnaissance</p>
+                </div>
+            </div>
         </header>
 
+        <!-- Auth Section -->
         <section id="auth-section" class="auth-section">
-            <div class="auth-card">
-                <h2>🔑 Authentication</h2>
+            <div class="auth-card glass-card">
+                <div class="auth-icon">🔐</div>
+                <h2>Authentication Required</h2>
                 <p>Enter your API key to access the scanner.</p>
                 <div class="auth-form">
-                    <input type="password" id="api-key-input" placeholder="Enter API Key" autocomplete="off">
-                    <button id="auth-btn">Authenticate</button>
+                    <div class="input-group">
+                        <input type="password" id="api-key-input" placeholder="Paste your API key" autocomplete="off">
+                        <button id="auth-btn" class="btn btn-primary">
+                            <span>Authenticate</span>
+                            <span class="btn-arrow">→</span>
+                        </button>
+                    </div>
                 </div>
                 <p id="auth-error" class="error-text hidden"></p>
+                <div class="auth-hint">
+                    <span class="hint-icon">ℹ️</span>
+                    <span>Find your API key in the <code>.env</code> file</span>
+                </div>
             </div>
         </section>
 
+        <!-- Main Scan Section -->
         <section id="scan-section" class="hidden">
-            <div class="scan-form">
-                <input type="text" id="target" placeholder="Enter target (e.g., example.com)" autocomplete="off">
-                <button id="scan-btn">Start Scan</button>
-                <button id="logout-btn" class="logout-btn" title="Logout">🔓</button>
+            <!-- Scan Input -->
+            <div class="scan-card glass-card">
+                <div class="scan-header">
+                    <h2>New Scan</h2>
+                    <button id="logout-btn" class="btn btn-ghost" title="Logout">
+                        <span>Logout</span>
+                    </button>
+                </div>
+                <p class="scan-desc">Enter a domain, email, IP address, or username to scan.</p>
+                <div class="scan-form">
+                    <div class="input-wrapper">
+                        <div class="input-icon" id="target-icon">🌐</div>
+                        <input type="text" id="target" placeholder="example.com, user@mail.com, 8.8.8.8, johndoe" autocomplete="off">
+                    </div>
+                    <button id="scan-btn" class="btn btn-primary btn-scan">
+                        <span class="btn-text">Start Scan</span>
+                        <span class="btn-loader hidden"></span>
+                    </button>
+                </div>
+                <div class="target-types">
+                    <span class="tag tag-domain">🌐 Domain</span>
+                    <span class="tag tag-email">📧 Email</span>
+                    <span class="tag tag-ip">🔗 IP Address</span>
+                    <span class="tag tag-user">👤 Username</span>
+                </div>
             </div>
 
+            <!-- Status Section -->
             <section id="status-container" class="hidden">
-                <h2>Status: <span id="scan-status">Starting...</span></h2>
-                <div class="loader" id="loader"></div>
+                <div class="status-card glass-card">
+                    <div class="status-header">
+                        <div class="status-info">
+                            <h3>Scan Progress</h3>
+                            <div class="status-badge" id="status-badge">
+                                <div class="pulse-dot"></div>
+                                <span id="scan-status">Initializing...</span>
+                            </div>
+                        </div>
+                        <div class="scan-target" id="scan-target-display"></div>
+                    </div>
+                    <div class="progress-bar" id="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <div class="stats-row" id="stats-row">
+                        <div class="stat">
+                            <span class="stat-value" id="stat-total">0</span>
+                            <span class="stat-label">Findings</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-value stat-high" id="stat-high">0</span>
+                            <span class="stat-label">High</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-value stat-medium" id="stat-medium">0</span>
+                            <span class="stat-label">Medium</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-value stat-info" id="stat-info">0</span>
+                            <span class="stat-label">Info</span>
+                        </div>
+                    </div>
+                </div>
             </section>
 
+            <!-- Results Section -->
             <section id="results-container" class="hidden">
-                <h2>Findings</h2>
-                <div class="table-wrapper">
-                    <table id="results-table">
-                        <thead>
-                            <tr>
-                                <th>Time</th>
-                                <th>Plugin</th>
-                                <th>Type</th>
-                                <th>Severity</th>
-                                <th>Data</th>
-                            </tr>
-                        </thead>
-                        <tbody id="results-body">
-                        </tbody>
-                    </table>
+                <div class="results-header">
+                    <h2>Findings</h2>
+                    <div class="results-controls">
+                        <select id="filter-severity" class="select-filter">
+                            <option value="all">All Severities</option>
+                            <option value="high">🔴 High</option>
+                            <option value="medium">🟡 Medium</option>
+                            <option value="low">🔵 Low</option>
+                            <option value="info">⚪ Info</option>
+                        </select>
+                        <select id="filter-plugin" class="select-filter">
+                            <option value="all">All Plugins</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="results-grid" class="results-grid">
+                    <!-- Finding cards rendered by JS -->
                 </div>
             </section>
         </section>
+
+        <footer>
+            <p>Autorecon Agent v0.1.0 · Passive Recon Only</p>
+        </footer>
     </div>
     <script src="/app.js"></script>
 </body>
